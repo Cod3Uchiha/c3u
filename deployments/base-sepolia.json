@@ -1,0 +1,17 @@
+{
+  "network": "Base Sepolia",
+  "chainId": 84532,
+  "contract": "0x47407E17bf4915b280a29AEF9e8482ae3a88Df29",
+  "deploymentTransaction": "0xe2be2d87b2820aad546dc7ab76c8be557d825203852571154f79e97f1e2eb337",
+  "owner": "0x42337F5384c4dF9617309dfEc36b25ea6d2f6f7b",
+  "verified": true,
+  "explorer": "https://sepolia.basescan.org/address/0x47407E17bf4915b280a29AEF9e8482ae3a88Df29",
+  "token": {
+    "name": "C3U",
+    "symbol": "C3U",
+    "decimals": 8,
+    "genesisSupply": "20062709",
+    "maxLifetimeIssuance": "21000000"
+  },
+  "status": "testnet"
+}
