@@ -20,6 +20,7 @@ contract C3UTokenTest is Test {
         assertEq(token.decimals(), 8);
         assertEq(token.cap(), 21_000_000 * 1e8);
         assertEq(token.totalSupply(), 20_062_709 * 1e8);
+        assertEq(token.totalMinted(), 20_062_709 * 1e8);
         assertEq(token.balanceOf(owner), token.GENESIS_SUPPLY());
     }
 
@@ -27,6 +28,7 @@ contract C3UTokenTest is Test {
         vm.prank(owner);
         token.mintRemaining(alice, 100 * 1e8);
         assertEq(token.balanceOf(alice), 100 * 1e8);
+        assertEq(token.totalMinted(), token.GENESIS_SUPPLY() + 100 * 1e8);
     }
 
     function testNonOwnerCannotMint() public {
@@ -36,15 +38,17 @@ contract C3UTokenTest is Test {
     }
 
     function testCannotEverExceedTwentyOneMillion() public {
+        uint256 tooMuch = token.remainingMintableSupply() + 1;
         vm.prank(owner);
         vm.expectRevert();
-        token.mintRemaining(alice, token.remainingMintableSupply() + 1);
+        token.mintRemaining(alice, tooMuch);
     }
 
     function testCanMintExactlyToCap() public {
+        uint256 remaining = token.remainingMintableSupply();
         vm.prank(owner);
-        token.mintRemaining(alice, token.remainingMintableSupply());
-        assertEq(token.totalSupply(), token.MAX_SUPPLY());
+        token.mintRemaining(alice, remaining);
+        assertEq(token.totalMinted(), token.MAX_SUPPLY());
         assertEq(token.remainingMintableSupply(), 0);
     }
 
@@ -54,6 +58,23 @@ contract C3UTokenTest is Test {
         vm.prank(alice);
         token.burn(4 * 1e8);
         assertEq(token.balanceOf(alice), 6 * 1e8);
+        assertEq(token.totalMinted(), token.GENESIS_SUPPLY());
+    }
+
+    function testBurnDoesNotReopenLifetimeIssuance() public {
+        uint256 remaining = token.remainingMintableSupply();
+        vm.prank(owner);
+        token.mintRemaining(owner, remaining);
+
+        vm.prank(owner);
+        token.burn(1_000 * 1e8);
+
+        assertEq(token.totalMinted(), token.MAX_SUPPLY());
+        assertEq(token.remainingMintableSupply(), 0);
+
+        vm.prank(owner);
+        vm.expectRevert();
+        token.mintRemaining(alice, 1);
     }
 
     function testOwnershipTransferIsTwoStep() public {
