@@ -10,21 +10,27 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 /// @title C3U
 /// @notice Bitcoin-style capped ERC-20 cryptocurrency for the Base network.
 /// @dev C3U uses 8 decimals to mirror Bitcoin's display precision. There are no taxes,
-///      blacklists, rebases, transfer fees, or hidden mint paths. Supply can never exceed 21M C3U.
+///      blacklists, rebases, transfer fees, or hidden mint paths.
 contract C3UToken is ERC20, ERC20Burnable, ERC20Capped, Ownable2Step {
     uint8 public constant C3U_DECIMALS = 8;
     uint256 public constant UNIT = 10 ** C3U_DECIMALS;
 
-    /// @notice Absolute lifetime supply ceiling: 21 million C3U.
+    /// @notice Absolute cumulative issuance ceiling: 21 million C3U.
     uint256 public constant MAX_SUPPLY = 21_000_000 * UNIT;
 
     /// @notice Launch supply snapshot matching the BTC circulating-supply figure selected on 2026-08-09.
     uint256 public constant GENESIS_SUPPLY = 20_062_709 * UNIT;
 
-    /// @notice Emitted whenever additional C3U is created from the remaining capped supply.
-    event EmissionMinted(address indexed to, uint256 amount, uint256 totalSupplyAfter);
+    /// @notice Total C3U ever minted. Burning tokens does not reduce this counter.
+    uint256 public totalMinted;
+
+    error C3ULifetimeCapExceeded(uint256 requested, uint256 remaining);
+
+    /// @notice Emitted whenever additional C3U is created from the remaining capped issuance.
+    event EmissionMinted(address indexed to, uint256 amount, uint256 totalSupplyAfter, uint256 totalMintedAfter);
 
     constructor(address initialOwner) ERC20("C3U", "C3U") ERC20Capped(MAX_SUPPLY) Ownable(initialOwner) {
+        totalMinted = GENESIS_SUPPLY;
         _mint(initialOwner, GENESIS_SUPPLY);
     }
 
@@ -33,16 +39,20 @@ contract C3UToken is ERC20, ERC20Burnable, ERC20Capped, Ownable2Step {
         return C3U_DECIMALS;
     }
 
-    /// @notice Amount that can still ever be minted before the hard 21M cap is reached.
+    /// @notice Amount that can still ever be issued before the lifetime 21M cap is reached.
     function remainingMintableSupply() public view returns (uint256) {
-        return cap() - totalSupply();
+        return MAX_SUPPLY - totalMinted;
     }
 
-    /// @notice Mint from the permanently limited remainder between current supply and 21M.
-    /// @dev Only the owner can emit new C3U. ERC20Capped makes exceeding 21M impossible.
+    /// @notice Mint from the permanently limited remainder of the 21M lifetime issuance.
+    /// @dev Burned C3U cannot be re-issued. This keeps cumulative issuance capped at 21M forever.
     function mintRemaining(address to, uint256 amount) external onlyOwner {
+        uint256 remaining = remainingMintableSupply();
+        if (amount > remaining) revert C3ULifetimeCapExceeded(amount, remaining);
+
+        totalMinted += amount;
         _mint(to, amount);
-        emit EmissionMinted(to, amount, totalSupply());
+        emit EmissionMinted(to, amount, totalSupply(), totalMinted);
     }
 
     /// @dev Required by Solidity because ERC20Capped overrides ERC20._update.
