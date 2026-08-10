@@ -2,7 +2,7 @@ name: C3U contracts
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "erc20-prototype"]
   pull_request:
 
 permissions:
