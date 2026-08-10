@@ -19,7 +19,19 @@ type NetworkParams struct {
 func Params(name string) (NetworkParams, error) {
 	switch name {
 	case "mainnet":
-		return NetworkParams{Name: "mainnet", AddressPrefix: "c3u1", DefaultPort: 39333, InitialDifficulty: 18, TargetBlockSeconds: 600, AdjustmentInterval: 2016, HalvingInterval: 210000, CoinbaseMaturity: 100, GenesisTimestamp: 1786314660, GenesisNonce: 372610, GenesisExpectedHash: "000001f755ad2875967bdd34b461de608997be3fce8178d41f87623e68475b9f"}, nil
+		return NetworkParams{
+			Name:                "mainnet",
+			AddressPrefix:       "c3u1",
+			DefaultPort:         39333,
+			InitialDifficulty:   26,
+			TargetBlockSeconds:  600,
+			AdjustmentInterval:  144,
+			HalvingInterval:     210000,
+			CoinbaseMaturity:    100,
+			GenesisTimestamp:    1786337460,
+			GenesisNonce:        7140716,
+			GenesisExpectedHash: "000000369992bbd8b1c7df0c1298529357c4e5a564b3355afbd6c7f2d2ee67b4",
+		}, nil
 	case "testnet":
 		return NetworkParams{Name: "testnet", AddressPrefix: "tc3u1", DefaultPort: 49333, InitialDifficulty: 12, TargetBlockSeconds: 60, AdjustmentInterval: 144, HalvingInterval: 210000, CoinbaseMaturity: 20, GenesisTimestamp: 1786314661, GenesisNonce: 9194, GenesisExpectedHash: "0003db54495abfc6ea3aeaa445c7ed1ebb1dac521853ebefa39061f328e55aad"}, nil
 	case "regtest":
