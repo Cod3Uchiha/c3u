@@ -22,6 +22,7 @@ contract C3UTokenTest is Test {
         assertEq(token.totalSupply(), 20_062_709 * 1e8);
         assertEq(token.totalMinted(), 20_062_709 * 1e8);
         assertEq(token.balanceOf(owner), token.GENESIS_SUPPLY());
+        assertFalse(token.paused());
     }
 
     function testOwnerCanMintOnlyInsideHardCap() public {
@@ -75,6 +76,53 @@ contract C3UTokenTest is Test {
         vm.prank(owner);
         vm.expectRevert();
         token.mintRemaining(alice, 1);
+    }
+
+    function testOwnerCanPauseAndUnpause() public {
+        vm.prank(owner);
+        token.pause();
+        assertTrue(token.paused());
+
+        vm.prank(owner);
+        vm.expectRevert();
+        token.transfer(alice, 1e8);
+
+        vm.prank(owner);
+        token.unpause();
+        assertFalse(token.paused());
+
+        vm.prank(owner);
+        token.transfer(alice, 1e8);
+        assertEq(token.balanceOf(alice), 1e8);
+    }
+
+    function testPauseBlocksMintAndBurn() public {
+        vm.prank(owner);
+        token.transfer(alice, 5 * 1e8);
+
+        vm.prank(owner);
+        token.pause();
+
+        vm.prank(owner);
+        vm.expectRevert();
+        token.mintRemaining(alice, 1e8);
+
+        vm.prank(alice);
+        vm.expectRevert();
+        token.burn(1e8);
+    }
+
+    function testNonOwnerCannotPauseOrUnpause() public {
+        vm.prank(alice);
+        vm.expectRevert();
+        token.pause();
+
+        vm.prank(owner);
+        token.pause();
+
+        vm.prank(alice);
+        vm.expectRevert();
+        token.unpause();
     }
 
     function testOwnershipTransferIsTwoStep() public {
