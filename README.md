@@ -4,46 +4,49 @@
 
 **C3U Core is the native C3U blockchain.** It does not require Ethereum, Base, ERC-20, a contract address, or ETH gas. C3U is the network's native currency and transaction fees are paid in C3U.
 
-> Status: **experimental native-chain testnet/regtest implementation.** It is suitable for development and public testing, not yet a production-value mainnet.
+## Mainnet status
+
+The C3U mainnet consensus identity and genesis block are frozen for the v0.1 launch. The network becomes live when independent mainnet nodes start from this genesis and block 1 is mined.
+
+Final mainnet genesis:
+
+```text
+000000369992bbd8b1c7df0c1298529357c4e5a564b3355afbd6c7f2d2ee67b4
+```
+
+C3U Core is new software and has not had the years of public review of mature cryptocurrency clients. A one-node chain is technically a mainnet but is not decentralized or strongly attack-resistant. Security improves as independent nodes and miners join.
 
 ## Monetary policy
 
 - Native currency: **C3U**
-- Smallest unit: **1 sat = 0.00000001 C3U**
+- Smallest unit: **0.00000001 C3U**
 - Precision: **8 decimals**
 - Initial block subsidy: **50 C3U**
-- Halving interval (mainnet/testnet): **210,000 blocks**
-- Target block interval (mainnet): **10 minutes**
-- Lifetime issuance ceiling: **21,000,000 C3U**
+- Halving interval: **210,000 blocks**
+- Target mainnet block interval: **10 minutes**
+- Mainnet difficulty retarget: **144 blocks**
+- Coinbase maturity: **100 blocks**
+- Maximum monetary range: **21,000,000 C3U**
 - Genesis premine: **none**
 - Consensus: **Proof of Work**
-- Ledger model: **UTXO**
+- Ledger: **UTXO**
 
-Like Bitcoin's subsidy schedule, integer satoshi rounding means the final issued amount approaches but does not exceed 21 million.
+The subsidy schedule approaches but never exceeds 21 million C3U because rewards are calculated in integer 1e-8 C3U units.
 
-## What is implemented
+## Mainnet security changes
 
-- deterministic C3U genesis block per network
-- independent `mainnet`, `testnet`, and `regtest`
-- native C3U block rewards
-- Bitcoin-style 50 C3U subsidy + halvings
-- proof-of-work block mining
-- difficulty adjustment checkpoints
-- UTXO transaction model
-- Ed25519 transaction signatures
-- checksummed C3U-native addresses (`c3u1…`, `tc3u1…`, `rc3u1…`)
-- coinbase maturity
-- transaction fees paid in C3U
-- mempool validation and double-spend rejection
-- JSON node API
-- peer block/transaction broadcast and basic chain sync
-- built-in mobile-friendly block explorer
-- CLI wallet, mining, balance, transfer, and status commands
-- JSON chain persistence
+The launch candidate adds:
 
-## Android / Termux quick start
+- encrypted wallet private keys at rest using AES-256-GCM
+- PBKDF2-HMAC-SHA256 password-based key derivation
+- cumulative-proof-of-work fork choice
+- continuous peer reconciliation instead of startup-only sync
+- fixed mainnet genesis constants
+- higher initial mainnet PoW difficulty
+- local-only mining RPC to prevent public peers from remotely consuming node CPU
+- HTTP server timeouts and request-size limits
 
-No ETH or faucet is required.
+## Build on Android / Termux
 
 ```bash
 pkg update -y
@@ -53,77 +56,91 @@ cd c3u
 go build -o c3u ./cmd/c3u
 ```
 
-Create two **regtest** wallets:
+## Create a real mainnet wallet
+
+Do not place the password directly in the command line. Read it silently into an environment variable:
 
 ```bash
-./c3u wallet new --network regtest --out miner.wallet.json
-./c3u wallet new --network regtest --out receiver.wallet.json
+read -s -p "C3U wallet password: " C3U_WALLET_PASSWORD; echo
+export C3U_WALLET_PASSWORD
+./c3u wallet new --network mainnet --out c3u-main.wallet.json
+unset C3U_WALLET_PASSWORD
 ```
 
-Start a local node:
+A mainnet address begins with `c3u1`.
+
+Back up `c3u-main.wallet.json` and the password separately. The private key is encrypted in the wallet file; losing the password can make the coins unrecoverable.
+
+## Start C3U Mainnet
 
 ```bash
-./c3u node --network regtest --data ./c3udata --listen :59333
+./c3u node \
+  --network mainnet \
+  --data ./c3u-mainnet \
+  --listen :39333
 ```
 
-Open a second Termux session and mine blocks to the miner address printed above:
+Local explorer:
 
-```bash
-./c3u mine --node http://127.0.0.1:59333 --address YOUR_RC3U_ADDRESS --count 2
+```text
+http://127.0.0.1:39333/
 ```
 
-Regtest coinbase maturity is one block, so the first reward becomes spendable after the second block. Check the balance:
+Check status:
 
 ```bash
-./c3u balance --node http://127.0.0.1:59333 --address YOUR_RC3U_ADDRESS
+./c3u status --node http://127.0.0.1:39333
 ```
 
-Send 1 C3U:
+## Mine native C3U
 
 ```bash
+./c3u mine \
+  --node http://127.0.0.1:39333 \
+  --address YOUR_C3U1_ADDRESS \
+  --count 1
+```
+
+Block 1 creates the first **50 native C3U**. There is no premine. Mainnet mining rewards become spendable after 100 blocks.
+
+## Connect independent nodes
+
+```bash
+./c3u node \
+  --network mainnet \
+  --data ./c3u-mainnet \
+  --listen :39333 \
+  --peer http://NODE_2_IP:39333 \
+  --peer http://NODE_3_IP:39333
+```
+
+Configured peers repeatedly compare chains. A replacement chain must have the same C3U mainnet genesis block, pass full consensus validation, and carry strictly more cumulative proof of work.
+
+## Send C3U
+
+```bash
+read -s -p "C3U wallet password: " C3U_WALLET_PASSWORD; echo
+export C3U_WALLET_PASSWORD
 ./c3u send \
-  --node http://127.0.0.1:59333 \
-  --wallet miner.wallet.json \
-  --to RECEIVER_RC3U_ADDRESS \
+  --node http://127.0.0.1:39333 \
+  --wallet c3u-main.wallet.json \
+  --to RECIPIENT_C3U1_ADDRESS \
   --amount 1 \
   --fee 0.0001
+unset C3U_WALLET_PASSWORD
 ```
 
-Mine one more block to confirm the transaction:
+## Networks
 
-```bash
-./c3u mine --node http://127.0.0.1:59333 --address YOUR_RC3U_ADDRESS --count 1
-```
+| Network | Address prefix | Port | Purpose |
+| --- | --- | ---: | --- |
+| Mainnet | `c3u1` | 39333 | Production C3U chain |
+| Testnet | `tc3u1` | 49333 | Public testing |
+| Regtest | `rc3u1` | 59333 | Local development |
 
-Then view the built-in explorer in your phone browser:
+Full frozen mainnet specification and operating instructions are in [`docs/MAINNET.md`](docs/MAINNET.md).
 
-`http://127.0.0.1:59333/`
-
-## Public testnet
-
-Run:
-
-```bash
-./c3u node --network testnet --data ./c3udata --listen :49333
-```
-
-Connect nodes using repeatable peer flags:
-
-```bash
-./c3u node --network testnet --listen :49333 \
-  --peer http://NODE_2_IP:49333 \
-  --peer http://NODE_3_IP:49333
-```
-
-The current peer transport is HTTP/JSON for the experimental network. A hardened binary P2P protocol, peer discovery, anti-DoS controls, headers-first sync, and chain-work fork choice are required before production mainnet.
-
-## Mainnet warning
-
-The repository contains provisional mainnet parameters so consensus code can be tested, but **do not assign real monetary value to this implementation yet**. Before a real C3U mainnet launch, freeze the consensus specification, generate and publish final mainnet genesis constants, implement cumulative-work fork selection and hardened P2P networking, conduct external security review, and run a multi-node public testnet.
-
-## Legacy ERC-20 prototype
-
-The earlier Base ERC-20 experiment is preserved in the `erc20-prototype` branch. It is not the native C3U chain and is not required to run C3U Core.
+The old Base ERC-20 experiment remains preserved on the `erc20-prototype` branch and is not part of the native C3U network.
 
 ## Build and test
 
