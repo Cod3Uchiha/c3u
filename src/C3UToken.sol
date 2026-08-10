@@ -4,14 +4,17 @@ pragma solidity ^0.8.24;
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC20Burnable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Burnable.sol";
 import {ERC20Capped} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Capped.sol";
+import {ERC20Pausable} from "@openzeppelin/contracts/token/ERC20/extensions/ERC20Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 
 /// @title C3U
 /// @notice Bitcoin-style capped ERC-20 cryptocurrency for the Base network.
 /// @dev C3U uses 8 decimals to mirror Bitcoin's display precision. There are no taxes,
-///      blacklists, rebases, transfer fees, or hidden mint paths.
-contract C3UToken is ERC20, ERC20Burnable, ERC20Capped, Ownable2Step {
+///      blacklists, rebases, transfer fees, unlimited mint paths, or balance-confiscation paths.
+///      The owner may pause/unpause the token for emergencies and mint only from the permanently
+///      limited remainder of the 21 million C3U lifetime issuance ceiling.
+contract C3UToken is ERC20, ERC20Burnable, ERC20Capped, ERC20Pausable, Ownable2Step {
     uint8 public constant C3U_DECIMALS = 8;
     uint256 public constant UNIT = 10 ** C3U_DECIMALS;
 
@@ -55,8 +58,21 @@ contract C3UToken is ERC20, ERC20Burnable, ERC20Capped, Ownable2Step {
         emit EmissionMinted(to, amount, totalSupply(), totalMinted);
     }
 
-    /// @dev Required by Solidity because ERC20Capped overrides ERC20._update.
-    function _update(address from, address to, uint256 value) internal override(ERC20, ERC20Capped) {
+    /// @notice Emergency stop for transfers, minting and burning.
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Resume transfers, minting and burning after an emergency pause.
+    function unpause() external onlyOwner {
+        _unpause();
+    }
+
+    /// @dev Required because ERC20Capped and ERC20Pausable both override ERC20._update.
+    function _update(address from, address to, uint256 value)
+        internal
+        override(ERC20, ERC20Capped, ERC20Pausable)
+    {
         super._update(from, to, value);
     }
 }
