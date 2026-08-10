@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -14,6 +15,8 @@ import (
 	"github.com/Cod3Uchiha/c3u/internal/core"
 	"github.com/Cod3Uchiha/c3u/internal/node"
 )
+
+var httpClient = &http.Client{Timeout: 30 * time.Second}
 
 func main() {
 	if len(os.Args) < 2 {
@@ -48,12 +51,15 @@ func usage() {
 	fmt.Print(`C3U Core
 
 Commands:
-  c3u wallet new --network regtest --out miner.wallet.json
-  c3u node --network regtest --data ./c3udata --listen :59333
-  c3u mine --node http://127.0.0.1:59333 --address rc3u1... --count 2
-  c3u balance --node http://127.0.0.1:59333 --address rc3u1...
-  c3u send --node http://127.0.0.1:59333 --wallet miner.wallet.json --to rc3u1... --amount 1 --fee 0.0001
-  c3u status --node http://127.0.0.1:59333
+  C3U_WALLET_PASSWORD=... c3u wallet new --network mainnet --out c3u-main.wallet.json
+  c3u node --network mainnet --data ./c3u-mainnet --listen :39333
+  c3u mine --node http://127.0.0.1:39333 --address c3u1... --count 1
+  c3u balance --node http://127.0.0.1:39333 --address c3u1...
+  C3U_WALLET_PASSWORD=... c3u send --node http://127.0.0.1:39333 --wallet c3u-main.wallet.json --to c3u1... --amount 1 --fee 0.0001
+  c3u status --node http://127.0.0.1:39333
+
+For encrypted wallets, set C3U_WALLET_PASSWORD in the environment. Avoid putting
+wallet passwords directly in command arguments or shell history.
 `)
 }
 
@@ -67,16 +73,21 @@ func walletCmd(args []string) error {
 	if err := fs.Parse(args[1:]); err != nil {
 		return err
 	}
+	password := os.Getenv("C3U_WALLET_PASSWORD")
+	if len(password) < 12 {
+		return fmt.Errorf("set C3U_WALLET_PASSWORD to at least 12 characters before creating a wallet")
+	}
 	w, err := core.NewWallet(*network)
 	if err != nil {
 		return err
 	}
-	if err := core.SaveWallet(*out, w); err != nil {
+	if err := core.SaveWalletEncrypted(*out, w, password); err != nil {
 		return err
 	}
 	fmt.Println("Address:", w.Address)
 	fmt.Println("Wallet:", *out)
-	fmt.Println("WARNING: wallet file contains the private key. Keep it secret and back it up securely.")
+	fmt.Println("Private key: encrypted at rest (AES-256-GCM)")
+	fmt.Println("Back up the wallet file and password separately. Losing either can make funds unrecoverable.")
 	return nil
 }
 
@@ -102,11 +113,25 @@ func nodeCmd(args []string) error {
 		return err
 	}
 	srv := node.New(bc, peers)
-	go srv.Sync()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go srv.SyncLoop(ctx, 15*time.Second)
+
 	fmt.Printf("C3U %s node listening on %s\n", *network, *listen)
 	fmt.Printf("Genesis: %s\n", bc.Blocks[0].Hash)
+	fmt.Printf("Chain work: %s\n", core.ChainWorkString(bc.Blocks))
 	fmt.Printf("Explorer: http://127.0.0.1%s/\n", *listen)
-	return http.ListenAndServe(*listen, srv.Handler())
+
+	server := &http.Server{
+		Addr:              *listen,
+		Handler:           node.HardenedHandler(srv.Handler()),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       20 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       60 * time.Second,
+		MaxHeaderBytes:    1 << 20,
+	}
+	return server.ListenAndServe()
 }
 
 func mineCmd(args []string) error {
@@ -122,6 +147,7 @@ func mineCmd(args []string) error {
 	}
 	return postPrint(*n+"/v1/mine", map[string]any{"address": *addr, "count": *count})
 }
+
 func balanceCmd(args []string) error {
 	fs := flag.NewFlagSet("balance", flag.ContinueOnError)
 	n := fs.String("node", "http://127.0.0.1:59333", "node URL")
@@ -134,6 +160,7 @@ func balanceCmd(args []string) error {
 	}
 	return getPrint(*n + "/v1/balance/" + *addr)
 }
+
 func statusCmd(args []string) error {
 	fs := flag.NewFlagSet("status", flag.ContinueOnError)
 	n := fs.String("node", "http://127.0.0.1:59333", "node URL")
@@ -156,7 +183,7 @@ func sendCmd(args []string) error {
 	if *walletPath == "" || *to == "" || *amountS == "" {
 		return fmt.Errorf("--wallet, --to, and --amount required")
 	}
-	w, err := core.LoadWallet(*walletPath)
+	w, err := core.LoadWalletEncrypted(*walletPath, os.Getenv("C3U_WALLET_PASSWORD"))
 	if err != nil {
 		return err
 	}
@@ -172,8 +199,11 @@ func sendCmd(args []string) error {
 	if err != nil {
 		return err
 	}
+	if amount > core.MaxMoney-fee {
+		return fmt.Errorf("amount plus fee exceeds maximum money")
+	}
 	need := amount + fee
-	resp, err := http.Get(strings.TrimRight(*n, "/") + "/v1/utxos/" + w.Address)
+	resp, err := httpClient.Get(strings.TrimRight(*n, "/") + "/v1/utxos/" + w.Address)
 	if err != nil {
 		return err
 	}
@@ -182,13 +212,16 @@ func sendCmd(args []string) error {
 		return responseError(resp)
 	}
 	var utxos []core.UTXO
-	if err := json.NewDecoder(resp.Body).Decode(&utxos); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<20)).Decode(&utxos); err != nil {
 		return err
 	}
 	var selected []core.UTXO
 	var sum int64
 	for _, u := range utxos {
 		selected = append(selected, u)
+		if sum > core.MaxMoney-u.Output.Value {
+			return fmt.Errorf("wallet UTXO total overflow")
+		}
 		sum += u.Output.Value
 		if sum >= need {
 			break
@@ -212,7 +245,7 @@ func sendCmd(args []string) error {
 
 func postPrint(url string, v any) error {
 	b, _ := json.Marshal(v)
-	resp, err := http.Post(url, "application/json", bytes.NewReader(b))
+	resp, err := httpClient.Post(url, "application/json", bytes.NewReader(b))
 	if err != nil {
 		return err
 	}
@@ -223,8 +256,9 @@ func postPrint(url string, v any) error {
 	_, err = io.Copy(os.Stdout, resp.Body)
 	return err
 }
+
 func getPrint(url string) error {
-	resp, err := http.Get(url)
+	resp, err := httpClient.Get(url)
 	if err != nil {
 		return err
 	}
@@ -235,6 +269,7 @@ func getPrint(url string) error {
 	_, err = io.Copy(os.Stdout, resp.Body)
 	return err
 }
+
 func responseError(resp *http.Response) error {
 	b, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return fmt.Errorf("node returned %s: %s", resp.Status, strings.TrimSpace(string(b)))
